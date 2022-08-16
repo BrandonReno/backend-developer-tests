@@ -1,6 +1,7 @@
 package fizzbuzz
 
 import (
+	"log"
 	"strconv"
 )
 
@@ -14,6 +15,12 @@ import (
 // - Return the original number if is is not divisible by either the `fizzAt` or
 //   the `buzzAt` values.
 func FizzBuzz(total, fizzAt, buzzAt int64) []string {
+	defer recoverSliceOutfRange()
+	if total < 0 || fizzAt < 0 || buzzAt < 0 {
+		log.Default().Println("input can not be less than zero")
+		return nil
+	}
+
 	result := make([]string, total)
 
 	for i := int64(1); i <= total; i++ {
@@ -30,6 +37,11 @@ func FizzBuzz(total, fizzAt, buzzAt int64) []string {
 			result[i-1] += "Buzz"
 		}
 	}
-
 	return result
+}
+
+func recoverSliceOutfRange() {
+	if r := recover(); r != nil {
+		log.Default().Println("total too large: could not create slice ", r)
+	}
 }
