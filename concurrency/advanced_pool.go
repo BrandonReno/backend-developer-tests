@@ -3,7 +3,10 @@ package concurrency
 import (
 	"context"
 	"errors"
+	"log"
 )
+
+var AdvancedAvailableWorkers = make(chan chan func(context.Context))
 
 // ErrPoolClosed is returned from AdvancedPool.Submit when the pool is closed
 // before submission can be sent.
@@ -30,11 +33,71 @@ type AdvancedPool interface {
 	Close(context.Context) error
 }
 
+type AdvancedCollector struct {
+	Work chan func(context.Context) // Jobs come in through this channel
+	End chan bool
+}
+
+func (c AdvancedCollector) Submit(ctx context.Context,f func(context.Context)) error {
+	c.Work <- f
+	return nil
+}
+
+func (c AdvancedCollector) Close(context.Context) error{
+	c.End <- true
+	return nil
+}
+
 // NewAdvancedPool creates a new AdvancedPool. maxSlots is the maximum total
 // submitted tasks, running or waiting, that can be submitted before Submit
 // blocks waiting for more room. maxConcurrent is the maximum tasks that can be
 // running at any one time. An error is returned if maxSlots is less than
 // maxConcurrent or if either value is not greater than zero.
 func NewAdvancedPool(maxSlots, maxConcurrent int) (AdvancedPool, error) {
-	panic("TODO")
+	if maxSlots < maxConcurrent || maxConcurrent < 0{
+		return nil, errors.New("invalid configuration of maxSlots, maxConcurrent")
+	}
+	incomingJobs := make(chan func(context.Context), maxSlots)
+	endWork := make(chan bool) 
+	collector := AdvancedCollector{Work: incomingJobs, End: endWork}
+	var workers []Worker
+	l := log.Default()
+
+	//Initialize the workers
+
+	for i := 0; i < maxConcurrent; i++{
+		w := Worker{
+			ID: i,
+			DispatchChannel: AdvancedAvailableWorkers,
+			WorkerChannel: make(chan func()),
+			End: make(chan bool),
+			Log: l,
+		}
+		
+		workers = append(workers, w)
+
+		w.Start() //start all the workers
+	}
+
+	// Start the dispatcher
+	go func(){
+		for {
+			select{
+				case <-endWork:
+					for _,w := range workers{
+						l.Println("Worker channels closing.")
+						w.Stop()
+					}
+					return
+				case job := <-incomingJobs: //when an incoming job comes in
+					nextAvailableWorker := <- AvailableWorkers // check who the next available worker in the Available worker channel
+					nextAvailableWorker <- job // send that next available worker the job to process
+			}
+
+				
+
+		}
+	}()
+	
+	return collector, nil
 }
